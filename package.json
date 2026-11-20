@@ -1,7 +1,7 @@
 {
-  "name": "dsh-go-workspace",
+  "name": "dsh-go-files",
   "version": "0.2.5",
-  "description": "Workspace panel for the dsh-go app: browse the workspace from the sidebar, preview text files, and upload files from the phone into uploads/<date>/.",
+  "description": "Workspace panel for the dsh-go app: browse the workspace from the sidebar, preview text/images/videos, upload from the phone, move and delete files.",
   "license": "MIT",
   "author": "miao",
   "type": "module",
@@ -15,7 +15,9 @@
     "lib",
     "cordis.patch.yml",
     "README.md",
+    "README.en.md",
     "LICENSE",
+    "CHANGELOG.md",
     "assets"
   ],
   "keywords": [
@@ -34,7 +36,8 @@
     "dsh": ">=0.2.1-rc.2 <0.3.0-0"
   },
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "release": "node scripts/release.mjs"
   },
   "dsh": {
     "bundle": {
@@ -69,5 +72,16 @@
       ]
     },
     "assets": "assets"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/boyexquisite/dsh-go-files.git"
+  },
+  "homepage": "https://github.com/boyexquisite/dsh-go-files#readme",
+  "bugs": {
+    "url": "https://github.com/boyexquisite/dsh-go-files/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
