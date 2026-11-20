@@ -339,8 +339,12 @@ test('folder images show as thumbnails instead of list rows', () => {
     writeFileSync(join(root, 'shot.png'), Buffer.from(PNG_1PX, 'base64'))
     const nodes = walk(browseView({ dir: '' }, root, caps(), cache))
     const gallery = nodes.find((n) => n.type === 'gallery')
-    assert.ok(gallery, 'gallery rendered')
+    assert.ok(gallery, 'thumbnail rendered')
     assert.ok(gallery.items.some((item) => /^asset:preview\/[0-9a-f]+\.png$/.test(item.src)))
+    const thumbRow = nodes.find((n) => n.type === 'row' && n.children?.some((c) => c.type === 'gallery'))
+    assert.ok(thumbRow, 'thumbnail sits in a fake list row')
+    assert.ok(thumbRow.children.some((c) => c.type === 'stack' && c.children.some((t) => t.type === 'text')))
+    assert.equal(gallery.items[0].action, undefined)
     assert.equal(gallery.items[0].action, undefined, 'tap opens the app viewer')
     const list = nodes.find((n) => n.type === 'list')
     assert.ok(list)
@@ -361,6 +365,21 @@ test('old apps keep images in the plain list', () => {
     assert.ok(!nodes.some((n) => n.type === 'gallery'))
     const list = nodes.find((n) => n.type === 'list')
     assert.ok(list.items.some((i) => i.title === 'shot.png'))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a folder with many images falls back to the grid', () => {
+  const root = tempRoot()
+  const cache = join(root, '.thumbs')
+  try {
+    for (let i = 0; i < 12; i += 1) writeFileSync(join(root, `p${String(i).padStart(2, '0')}.png`), Buffer.from(PNG_1PX, 'base64'))
+    const nodes = walk(browseView({ dir: '' }, root, caps(), cache))
+    const galleries = nodes.filter((n) => n.type === 'gallery')
+    assert.equal(galleries.length, 1, 'one grid gallery, no per-image rows')
+    assert.ok(galleries[0].items.length > 10)
+    assert.ok(!nodes.some((n) => n.type === 'row' && n.children?.some((c) => c.type === 'gallery')))
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
