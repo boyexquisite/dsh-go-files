@@ -332,7 +332,7 @@ test('media views pass the app view parser', { skip: checkView === undefined ? '
   }
 })
 
-test('folder images show as thumbnails instead of list rows', () => {
+test('folder images show as two-column thumbnail cards', () => {
   const root = tempRoot()
   const cache = join(root, '.thumbs')
   try {
@@ -340,10 +340,10 @@ test('folder images show as thumbnails instead of list rows', () => {
     const nodes = walk(browseView({ dir: '' }, root, caps(), cache))
     const gallery = nodes.find((n) => n.type === 'gallery')
     assert.ok(gallery, 'thumbnail rendered')
+    assert.equal(gallery.columns, 2)
     assert.ok(gallery.items.some((item) => /^asset:preview\/[0-9a-f]+\.png$/.test(item.src)))
-    const thumbRow = nodes.find((n) => n.type === 'row' && n.children?.some((c) => c.type === 'gallery'))
-    assert.ok(thumbRow, 'thumbnail sits in a fake list row')
-    assert.ok(thumbRow.children.some((c) => c.type === 'stack' && c.children.some((t) => t.type === 'text')))
+    assert.ok(gallery.items.every((item) => typeof item.caption === 'string' && item.caption.length > 0))
+    assert.ok(!nodes.some((n) => n.type === 'row' && n.children?.some((c) => c.type === 'gallery')))
     assert.equal(gallery.items[0].action, undefined)
     assert.equal(gallery.items[0].action, undefined, 'tap opens the app viewer')
     const list = nodes.find((n) => n.type === 'list')
