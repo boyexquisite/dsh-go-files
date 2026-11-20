@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -307,5 +308,63 @@ test('moveFile renames inside the workspace and never overwrites', () => {
     assert.equal(moveFile(root, 'a/x.txt', '../out').error, 'no-target')
   } finally {
     rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('deleteFile / deleteEmptyFolder / moveFile refuse a symlinked parent that leads outside', () => {
+  const root = tempRoot()
+  const outside = tempRoot()
+  try {
+    writeFileSync(join(outside, 'secret.txt'), 'secret')
+    mkdirSync(join(outside, 'emptyd'))
+    mkdirSync(join(root, 'ok'))
+    symlinkSync(outside, join(root, 'escape'))
+    assert.equal(deleteFile(root, 'escape/secret.txt').error, 'denied')
+    assert.equal(deleteEmptyFolder(root, 'escape/emptyd').error, 'denied')
+    assert.equal(moveFile(root, 'escape/secret.txt', 'ok').error, 'denied')
+    assert.ok(existsSync(join(outside, 'secret.txt')))
+    assert.ok(existsSync(join(outside, 'emptyd')))
+    // 目标目录是指向外面的符号链接也拒绝
+    writeFileSync(join(root, 'ok', 'f.txt'), 'x')
+    assert.equal(moveFile(root, 'ok/f.txt', 'escape').error, 'no-target')
+    assert.ok(!existsSync(join(outside, 'f.txt')))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(outside, { recursive: true, force: true })
+  }
+})
+
+test('previewFile refuses a FIFO instead of hanging', () => {
+  const root = tempRoot()
+  try {
+    execFileSync('mkfifo', [join(root, 'pipe')])
+    assert.equal(previewFile(root, 'pipe').error, 'not-file')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('savePicked enforces a per-file size cap and stays inside the workspace', () => {
+  const root = tempRoot()
+  const outside = tempRoot()
+  try {
+    const big = Buffer.alloc(11, 1)
+    const result = savePicked(
+      [{ handle: 'a', name: 'big.bin' }, { handle: 'b', name: 'ok.bin' }, { handle: 'c', name: 'declared.bin', size: 999 }],
+      (h) => (h === 'b' ? Buffer.alloc(5, 1) : big),
+      { root, maxBytes: 10 },
+    )
+    assert.deepEqual(result.saved.map((f) => f.name), ['ok.bin'])
+    assert.deepEqual(result.failed.map((f) => f.name), ['big.bin', 'declared.bin'])
+
+    // uploads 是指向工作区外的符号链接：整批拒绝，外部目录不被写入
+    symlinkSync(outside, join(root, 'linked'))
+    const escaped = savePicked([{ handle: 'a', name: 'x.txt' }], () => Buffer.from('x'), { root, folder: 'linked/day' })
+    assert.equal(escaped.error, 'mkdir')
+    assert.equal(escaped.saved.length, 0)
+    assert.ok(!existsSync(join(outside, 'day')))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(outside, { recursive: true, force: true })
   }
 })
