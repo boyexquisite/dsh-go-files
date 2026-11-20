@@ -189,6 +189,13 @@ test('opening an image prepares an asset the app can draw', { skip: SKIP }, asyn
     const plugin = await import('../lib/index.js')
     plugin.apply(host.ctx, { root, cacheDir: cache })
     const scope = { sessionId: 'img1' }
+    const browse = await host.view('files', scope, { features: ['files'] })
+    const browseNodes = walk(browse.view)
+    assert.ok(browseNodes.some((n) => n.type === 'gallery'), 'thumbnail gallery at folder level')
+    const browseList = browseNodes.find((n) => n.type === 'list')
+    assert.ok(browseList)
+    assert.ok(!browseList.items.some((i) => i.title === 'pic.png'))
+
     const opened = await host.invoke('files', { surface: 'panel', action: 'open', scope, value: { path: 'pic.png' } })
     assert.deepEqual(opened.effects, [{ type: 'refresh', id: 'files' }])
 

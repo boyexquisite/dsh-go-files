@@ -7,6 +7,8 @@ import { pathToFileURL } from 'node:url'
 import { rootOf } from '../lib/workspace.js'
 import { browseView, displayName, fileView, panelView } from '../lib/view.js'
 
+const PNG_1PX = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+
 const ALL = [
   'stack', 'row', 'text', 'list', 'actions', 'keyValue', 'callout',
   'codeBlock', 'emptyState', 'divider', 'metric', 'chart', 'gallery',
@@ -325,6 +327,40 @@ test('media views pass the app view parser', { skip: checkView === undefined ? '
       assert.equal(result.ok, true, JSON.stringify(result.issues))
       assert.ok(result.issues.every((i) => i.kind === 'note'), JSON.stringify(result.issues))
     }
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('folder images show as thumbnails instead of list rows', () => {
+  const root = tempRoot()
+  const cache = join(root, '.thumbs')
+  try {
+    writeFileSync(join(root, 'shot.png'), Buffer.from(PNG_1PX, 'base64'))
+    const nodes = walk(browseView({ dir: '' }, root, caps(), cache))
+    const gallery = nodes.find((n) => n.type === 'gallery')
+    assert.ok(gallery, 'gallery rendered')
+    assert.ok(gallery.items.some((item) => /^asset:preview\/[0-9a-f]+\.png$/.test(item.src)))
+    assert.equal(gallery.items[0].action, undefined, 'tap opens the app viewer')
+    const list = nodes.find((n) => n.type === 'list')
+    assert.ok(list)
+    assert.ok(!list.items.some((i) => i.title === 'shot.png'), 'image row is replaced by its thumbnail')
+    assert.ok(list.items.some((i) => i.title === 'a.txt'))
+    assert.ok(list.items.some((i) => i.title === 'docs'))
+    assert.ok(nodes.some((n) => n.type === 'text' && String(n.text).includes('图片')))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('old apps keep images in the plain list', () => {
+  const root = tempRoot()
+  try {
+    writeFileSync(join(root, 'shot.png'), Buffer.from(PNG_1PX, 'base64'))
+    const nodes = walk(browseView({ dir: '' }, root, caps({ components: undefined }), join(root, '.thumbs')))
+    assert.ok(!nodes.some((n) => n.type === 'gallery'))
+    const list = nodes.find((n) => n.type === 'list')
+    assert.ok(list.items.some((i) => i.title === 'shot.png'))
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

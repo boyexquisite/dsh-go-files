@@ -1,6 +1,6 @@
 {
   "name": "dsh-go-workspace",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Workspace panel for the dsh-go app: browse the workspace from the sidebar, preview text files, and upload files from the phone into uploads/<date>/.",
   "license": "MIT",
   "author": "miao",

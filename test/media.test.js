@@ -16,6 +16,7 @@ import {
   formatDuration,
   mediaKind,
   prepareImage,
+  prepareFolderThumbs,
   prepareImageGallery,
   prepareMedia,
   prepareVideo,
@@ -244,6 +245,25 @@ test('prepareImageGallery respects the limit and a broken image', { skip: SKIP }
     const missing = prepareImageGallery(root, 'nope.png', cache)
     assert.equal(missing.items.length, 0)
     assert.equal(missing.opened.error, 'missing')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(join(cache, '..'), { recursive: true, force: true })
+  }
+})
+
+test('prepareFolderThumbs only picks image files', { skip: SKIP }, () => {
+  const { root, cache } = fixtures()
+  try {
+    makeImage(root, 'b.png', 16, 16)
+    makeImage(root, 'a.jpg', 16, 16)
+    writeFileSync(join(root, 'notes.txt'), 'x')
+    mkdirSync(join(root, 'sub'), { recursive: true })
+    const items = prepareFolderThumbs(root, '', cache)
+    assert.deepEqual(items.map((i) => i.name), ['a.jpg', 'b.png'])
+    for (const item of items) assert.ok(existsSync(join(cache, item.asset.slice('asset:preview/'.length))))
+    const limited = prepareFolderThumbs(root, '', cache, { limit: 1 })
+    assert.equal(limited.length, 1)
+    assert.deepEqual(prepareFolderThumbs(root, 'missing', cache), [])
   } finally {
     rmSync(root, { recursive: true, force: true })
     rmSync(join(cache, '..'), { recursive: true, force: true })
