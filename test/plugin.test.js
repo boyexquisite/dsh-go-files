@@ -2,11 +2,11 @@
 // 找不到工具包时整组跳过（这个测试只在装了 dsh-go-plugin 技能的机器上有意义）。
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { rootOf } from '../lib/workspace.js'
+import { dateFolder, rootOf } from '../lib/workspace.js'
 
 const HOME = process.env.HOME ?? ''
 const KITS = [
@@ -204,5 +204,47 @@ test('opening an image prepares an asset the app can draw', { skip: SKIP }, asyn
   } finally {
     rmSync(root, { recursive: true, force: true })
     rmSync(cache, { recursive: true, force: true })
+  }
+})
+
+test('upload callback saves the picked files into uploads/<date>/', { skip: SKIP }, async () => {
+  const root = tempRoot()
+  try {
+    const host = makeHost()
+    // 测试宿主没有真实上传路由，这里替身给出 selected 文件的字节。
+    host.dshGo.readPickedFile = (handle) => {
+      if (handle === 'ok') return Buffer.from('hello from the phone')
+      throw new Error('handle expired')
+    }
+    const plugin = await import('../lib/index.js')
+    plugin.apply(host.ctx, { root })
+    const scope = { sessionId: 'up1' }
+    const result = await host.invoke('files', {
+      surface: 'panel',
+      action: 'receive',
+      scope,
+      value: {
+        status: 'selected',
+        files: [
+          { handle: 'ok', name: '/sdcard/DCIM/note.txt' },
+          { handle: 'gone', name: 'bad.txt' },
+        ],
+      },
+    })
+    const toast = result.effects.find((e) => e.type === 'toast')
+    assert.match(toast.text, /1 个，1 个失败/)
+    assert.ok(result.effects.some((e) => e.type === 'refresh'))
+
+    const view = await host.view('files', scope, { features: ['files'] })
+    const nodes = walk(view.view)
+    const list = nodes.find((n) => n.type === 'list')
+    assert.deepEqual(list.items.map((i) => i.title), ['note.txt'])
+    assert.ok(nodes.some((n) => n.type === 'text' && n.text === 'uploads/' + dateFolder()))
+
+    const saved = join(root, 'uploads', dateFolder(), 'note.txt')
+    assert.equal(readFileSync(saved, 'utf8'), 'hello from the phone')
+    assert.deepEqual(host.violations, [])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
   }
 })

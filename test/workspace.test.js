@@ -116,6 +116,10 @@ test('previewFile reads text, flags binaries and truncates long files', () => {
     writeFileSync(join(root, 'bin.dat'), Buffer.from([0, 1, 2, 3]))
     assert.equal(previewFile(root, 'bin.dat').error, 'binary')
 
+    // 没有 NUL 的二进制（很像 PDF / 压缩包）也该认出来
+    writeFileSync(join(root, 'odd.bin'), Buffer.from([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f]))
+    assert.equal(previewFile(root, 'odd.bin').error, 'binary')
+
     writeFileSync(join(root, 'long.txt'), 'x'.repeat(8000))
     const long = previewFile(root, 'long.txt')
     assert.equal(long.text.length, 6000)
@@ -212,15 +216,37 @@ test('workspaceRoot prefers env, then the DSH workspace registry', () => {
   const home = mkdtempSync(join(tmpdir(), 'dsh-home-'))
   try {
     mkdirSync(join(home, 'storages'), { recursive: true })
+    const workspace = join(home, 'work')
+    mkdirSync(workspace, { recursive: true })
     writeFileSync(join(home, 'storages', 'workspace.json'), JSON.stringify({
       global: { workspaceIds: ['w1'] },
-      tables: { workspaces: { w1: { path: '/work/one' } } },
+      tables: { workspaces: { w1: { path: workspace } } },
     }))
     const env = { DSH_HOME: home }
-    assert.equal(workspaceRoot(env, '/nowhere'), '/work/one')
+    assert.equal(workspaceRoot(env, '/nowhere'), workspace)
     assert.equal(workspaceRoot({ ...env, DSH_WORKSPACE_ROOT: '/explicit' }, '/nowhere'), '/explicit')
     assert.equal(workspaceRoot({ DSH_HOME: join(home, 'missing') }, '/nowhere'), process.cwd())
+    // 注册表里的目录不在了，也退回 cwd
+    writeFileSync(join(home, 'storages', 'workspace.json'), JSON.stringify({
+      global: { workspaceIds: ['w2'] },
+      tables: { workspaces: { w2: { path: '/definitely/not/here' } } },
+    }))
+    assert.equal(workspaceRoot(env, '/nowhere'), process.cwd())
   } finally {
     rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('savePicked reports a folder it cannot create', () => {
+  const root = tempRoot()
+  try {
+    const blocker = join(root, 'uploads')
+    writeFileSync(blocker, 'not a dir')
+    const result = savePicked([{ handle: 'h', name: 'a.txt' }], () => Buffer.from('x'), { root, folder: 'uploads/2026-11-20' })
+    assert.equal(result.error, 'mkdir')
+    assert.equal(result.saved.length, 0)
+    assert.equal(result.failed.length, 1)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
   }
 })

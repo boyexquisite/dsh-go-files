@@ -190,3 +190,17 @@ test('pruneCache drops expired files and keeps the newest ones', () => {
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('preparing a preview prunes the cache', { skip: SKIP }, () => {
+  const { root, cache } = fixtures()
+  try {
+    makeImage(root, 'small.png', 32, 32)
+    for (let i = 0; i < CACHE_KEEP + 5; i += 1) writeFileSync(join(cache, `old${i}.jpg`), 'x')
+    assert.equal(readdirSync(cache).length, CACHE_KEEP + 5)
+    prepareImage(root, 'small.png', cache)
+    assert.ok(readdirSync(cache).length <= CACHE_KEEP)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(join(cache, '..'), { recursive: true, force: true })
+  }
+})
