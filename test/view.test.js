@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { rootOf } from '../lib/workspace.js'
-import { browseView, fileView, panelView } from '../lib/view.js'
+import { browseView, displayName, fileView, panelView } from '../lib/view.js'
 
 const ALL = [
   'stack', 'row', 'text', 'list', 'actions', 'keyValue', 'callout',
@@ -180,24 +180,69 @@ test('English locale switches the labels', () => {
   }
 })
 
-test('image files preview big and open the full-screen viewer', () => {
+test('image files become a gallery that opens the full-screen viewer', () => {
   const root = tempRoot()
   try {
     const view = fileView({
       dir: '',
       file: 'pic.png',
-      media: { kind: 'image', asset: 'asset:preview/abc.jpg', width: 640, height: 480, aspect: 640 / 480, bytes: 12345 },
+      media: {
+        kind: 'image', asset: 'asset:preview/abc.jpg', width: 640, height: 480, aspect: 640 / 480, bytes: 12345,
+        gallery: [
+          { asset: 'asset:preview/abc.jpg', name: 'pic.png', aspect: 640 / 480 },
+          { asset: 'asset:preview/def.jpg', name: 'other.png', aspect: 1 },
+        ],
+      },
     }, root, caps())
     const nodes = walk(view)
-    const image = nodes.find((n) => n.type === 'image')
-    assert.equal(image.src, 'asset:preview/abc.jpg')
-    assert.ok(Math.abs(image.aspect - 1.3333) < 0.01)
+    assert.ok(!nodes.some((n) => n.type === 'image'), 'no duplicate inline image')
     const gallery = nodes.find((n) => n.type === 'gallery')
-    assert.equal(gallery.items[0].src, 'asset:preview/abc.jpg')
-    assert.ok(nodes.some((n) => n.type === 'text' && String(n.text).includes('缩略图')))
+    assert.deepEqual(gallery.items.map((i) => i.src), ['asset:preview/abc.jpg', 'asset:preview/def.jpg'])
+    assert.equal(gallery.columns, 2)
+    assert.ok(nodes.some((n) => n.type === 'text' && String(n.text).includes('全屏')))
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
+})
+
+test('old apps still get a plain inline image', () => {
+  const root = tempRoot()
+  try {
+    const nodes = walk(fileView({
+      dir: '',
+      file: 'pic.png',
+      media: { kind: 'image', asset: 'asset:preview/abc.jpg', width: 640, height: 480, aspect: 640 / 480, bytes: 12345 },
+    }, root, caps({ components: undefined })))
+    assert.ok(!nodes.some((n) => n.type === 'gallery'))
+    assert.equal(nodes.find((n) => n.type === 'image').src, 'asset:preview/abc.jpg')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('file headers stay small and only show the folder', () => {
+  const root = tempRoot()
+  try {
+    const longName = 'Screenshot_2026-11-20-17-23-27-65_a26f39edaa70fc7297c941fb49e14188.jpg'
+    const nodes = walk(fileView({ dir: 'uploads/2026-11-20', file: `uploads/2026-11-20/${longName}` }, root, caps()))
+    const header = nodes.find((n) => n.type === 'text' && String(n.text).startsWith('Screenshot_'))
+    assert.ok(header)
+    assert.ok(String(header.text).length <= 45)
+    assert.ok(String(header.text).includes('…'))
+    assert.equal(header.style.size, 'body')
+    assert.ok(nodes.some((n) => n.type === 'text' && n.text === 'uploads/2026-11-20'))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('displayName shortens the middle of long names', () => {
+  assert.equal(displayName('a.txt'), 'a.txt')
+  assert.equal(displayName('x'.repeat(10)), 'x'.repeat(10))
+  const long = displayName('x'.repeat(80), 20)
+  assert.equal([...long].length, 20)
+  assert.ok(long.includes('…'))
+  assert.ok(long.startsWith('x'))
 })
 
 test('video files show a cover, a silent clip and the length', () => {

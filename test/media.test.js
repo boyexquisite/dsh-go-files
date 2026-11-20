@@ -16,6 +16,7 @@ import {
   formatDuration,
   mediaKind,
   prepareImage,
+  prepareImageGallery,
   prepareMedia,
   prepareVideo,
   probe,
@@ -199,6 +200,50 @@ test('preparing a preview prunes the cache', { skip: SKIP }, () => {
     assert.equal(readdirSync(cache).length, CACHE_KEEP + 5)
     prepareImage(root, 'small.png', cache)
     assert.ok(readdirSync(cache).length <= CACHE_KEEP)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(join(cache, '..'), { recursive: true, force: true })
+  }
+})
+
+test('prepareImageGallery puts the opened image first and adds siblings', { skip: SKIP }, () => {
+  const { root, cache } = fixtures()
+  try {
+    makeImage(root, 'b.png', 64, 48)
+    makeImage(root, 'a.png', 32, 32)
+    makeImage(root, 'c.png', 48, 64)
+    writeFileSync(join(root, 'note.txt'), 'x')
+    const { opened, items } = prepareImageGallery(root, 'b.png', cache, { limit: 9, budgetMs: 5000 })
+    assert.equal(opened.kind, 'image')
+    assert.equal(items.length, 3)
+    assert.equal(items[0].name, 'b.png')
+    assert.deepEqual(items.map((i) => i.name).sort(), ['a.png', 'b.png', 'c.png'])
+    for (const item of items) {
+      assert.match(item.asset, /^asset:preview\/[0-9a-f]+\.png$/)
+      assert.ok(existsSync(join(cache, item.asset.slice('asset:preview/'.length))))
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(join(cache, '..'), { recursive: true, force: true })
+  }
+})
+
+test('prepareImageGallery respects the limit and a broken image', { skip: SKIP }, () => {
+  const { root, cache } = fixtures()
+  try {
+    makeImage(root, 'a.png', 16, 16)
+    makeImage(root, 'b.png', 16, 16)
+    writeFileSync(join(root, 'broken.png'), 'not an image')
+    const limited = prepareImageGallery(root, 'a.png', cache, { limit: 1, budgetMs: 5000 })
+    assert.equal(limited.items.length, 1)
+    const withBroken = prepareImageGallery(root, 'a.png', cache, { limit: 9, budgetMs: 5000 })
+    const names = withBroken.items.map((i) => i.name)
+    assert.equal(names[0], 'a.png')
+    assert.ok(names.includes('b.png'))
+    assert.ok(names.length <= 3)
+    const missing = prepareImageGallery(root, 'nope.png', cache)
+    assert.equal(missing.items.length, 0)
+    assert.equal(missing.opened.error, 'missing')
   } finally {
     rmSync(root, { recursive: true, force: true })
     rmSync(join(cache, '..'), { recursive: true, force: true })

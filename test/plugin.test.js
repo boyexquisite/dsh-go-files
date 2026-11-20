@@ -194,12 +194,12 @@ test('opening an image prepares an asset the app can draw', { skip: SKIP }, asyn
 
     const view = await host.view('files', scope, { features: ['files'] })
     const nodes = walk(view.view)
-    const image = nodes.find((n) => n.type === 'image')
-    assert.ok(image, 'image node rendered')
-    assert.match(image.src, /^asset:preview\/[0-9a-f]+\.png$/)
-    const cached = join(cache, image.src.slice('asset:preview/'.length))
+    const gallery = nodes.find((n) => n.type === 'gallery')
+    assert.ok(gallery, 'gallery rendered')
+    assert.equal(gallery.items[0].src.startsWith('asset:preview/'), true)
+    assert.match(gallery.items[0].src, /^asset:preview\/[0-9a-f]+\.png$/)
+    const cached = join(cache, gallery.items[0].src.slice('asset:preview/'.length))
     assert.ok(existsSync(cached))
-    assert.ok(nodes.some((n) => n.type === 'gallery'))
     assert.deepEqual(host.violations, [])
   } finally {
     rmSync(root, { recursive: true, force: true })
