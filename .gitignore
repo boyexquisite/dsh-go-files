@@ -4,3 +4,6 @@ npm-debug.log*
 .DS_Store
 .idea/
 .vscode/
+
+# 图片/视频预览缓存
+assets/preview/

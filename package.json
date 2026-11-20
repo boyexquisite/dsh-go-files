@@ -1,6 +1,6 @@
 {
   "name": "dsh-go-workspace",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Workspace panel for the dsh-go app: browse the workspace from the sidebar, preview text files, and upload files from the phone into uploads/<date>/.",
   "license": "MIT",
   "author": "miao",
@@ -15,7 +15,8 @@
     "lib",
     "cordis.patch.yml",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "assets"
   ],
   "keywords": [
     "dsh",
@@ -66,6 +67,7 @@
           ]
         }
       ]
-    }
+    },
+    "assets": "assets"
   }
 }

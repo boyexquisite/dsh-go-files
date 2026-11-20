@@ -18,6 +18,7 @@ import {
   shortTime,
   uniquePath,
   UPLOAD_DIR,
+  workspaceRoot,
 } from '../lib/workspace.js'
 
 function tempRoot() {
@@ -205,4 +206,21 @@ test('relativeOf maps absolute paths back to workspace relatives', () => {
   const root = '/work'
   assert.equal(relativeOf(root, '/work'), '')
   assert.equal(relativeOf(root, '/work/a/b.txt'), 'a/b.txt')
+})
+
+test('workspaceRoot prefers env, then the DSH workspace registry', () => {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-home-'))
+  try {
+    mkdirSync(join(home, 'storages'), { recursive: true })
+    writeFileSync(join(home, 'storages', 'workspace.json'), JSON.stringify({
+      global: { workspaceIds: ['w1'] },
+      tables: { workspaces: { w1: { path: '/work/one' } } },
+    }))
+    const env = { DSH_HOME: home }
+    assert.equal(workspaceRoot(env, '/nowhere'), '/work/one')
+    assert.equal(workspaceRoot({ ...env, DSH_WORKSPACE_ROOT: '/explicit' }, '/nowhere'), '/explicit')
+    assert.equal(workspaceRoot({ DSH_HOME: join(home, 'missing') }, '/nowhere'), process.cwd())
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
 })

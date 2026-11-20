@@ -27,6 +27,9 @@ for (const dir of KITS) {
 }
 
 const SKIP = kit === undefined ? 'dsh-go-plugin 工具包不在本机' : false
+
+// 1×1 透明 PNG：不需要 ffmpeg 也能验证图片预览链路。
+const PNG_1PX = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
 const here = new URL('..', import.meta.url).pathname
 
 function makeHost(options = {}) {
@@ -174,5 +177,32 @@ test('paths outside the workspace are rejected by the panel', { skip: SKIP }, as
     assert.deepEqual(host.violations, [])
   } finally {
     rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('opening an image prepares an asset the app can draw', { skip: SKIP }, async () => {
+  const root = tempRoot()
+  const cache = join(root, '.cache')
+  try {
+    writeFileSync(join(root, 'pic.png'), Buffer.from(PNG_1PX, 'base64'))
+    const host = makeHost()
+    const plugin = await import('../lib/index.js')
+    plugin.apply(host.ctx, { root, cacheDir: cache })
+    const scope = { sessionId: 'img1' }
+    const opened = await host.invoke('files', { surface: 'panel', action: 'open', scope, value: { path: 'pic.png' } })
+    assert.deepEqual(opened.effects, [{ type: 'refresh', id: 'files' }])
+
+    const view = await host.view('files', scope, { features: ['files'] })
+    const nodes = walk(view.view)
+    const image = nodes.find((n) => n.type === 'image')
+    assert.ok(image, 'image node rendered')
+    assert.match(image.src, /^asset:preview\/[0-9a-f]+\.png$/)
+    const cached = join(cache, image.src.slice('asset:preview/'.length))
+    assert.ok(existsSync(cached))
+    assert.ok(nodes.some((n) => n.type === 'gallery'))
+    assert.deepEqual(host.violations, [])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(cache, { recursive: true, force: true })
   }
 })

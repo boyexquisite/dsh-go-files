@@ -1,14 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { rootOf } from '../lib/workspace.js'
 import { browseView, fileView, panelView } from '../lib/view.js'
 
 const ALL = [
   'stack', 'row', 'text', 'list', 'actions', 'keyValue', 'callout',
-  'codeBlock', 'emptyState', 'divider', 'metric', 'chart',
+  'codeBlock', 'emptyState', 'divider', 'metric', 'chart', 'gallery',
 ]
 
 function caps(overrides = {}) {
@@ -174,6 +175,111 @@ test('English locale switches the labels', () => {
     const nodes = walk(view)
     const actions = nodes.find((n) => n.type === 'actions')
     assert.deepEqual(actions.items.map((i) => i.label), ['Up', 'Refresh', 'Upload'])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('image files preview big and open the full-screen viewer', () => {
+  const root = tempRoot()
+  try {
+    const view = fileView({
+      dir: '',
+      file: 'pic.png',
+      media: { kind: 'image', asset: 'asset:preview/abc.jpg', width: 640, height: 480, aspect: 640 / 480, bytes: 12345 },
+    }, root, caps())
+    const nodes = walk(view)
+    const image = nodes.find((n) => n.type === 'image')
+    assert.equal(image.src, 'asset:preview/abc.jpg')
+    assert.ok(Math.abs(image.aspect - 1.3333) < 0.01)
+    const gallery = nodes.find((n) => n.type === 'gallery')
+    assert.equal(gallery.items[0].src, 'asset:preview/abc.jpg')
+    assert.ok(nodes.some((n) => n.type === 'text' && String(n.text).includes('缩略图')))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('video files show a cover, a silent clip and the length', () => {
+  const root = tempRoot()
+  try {
+    const view = fileView({
+      dir: '',
+      file: 'clip.mp4',
+      media: { kind: 'video', poster: 'asset:preview/p.jpg', gif: 'asset:preview/l.gif', width: 320, height: 240, duration: 12.4, aspect: 4 / 3, bytes: 900000 },
+    }, root, caps())
+    const nodes = walk(view)
+    const gallery = nodes.find((n) => n.type === 'gallery')
+    assert.deepEqual(gallery.items.map((i) => i.src), ['asset:preview/l.gif', 'asset:preview/p.jpg'])
+    const kv = nodes.find((n) => n.type === 'keyValue')
+    assert.ok(kv.items.some(([label, value]) => label === '时长' && value === '0:12'))
+    assert.ok(kv.items.some(([label, value]) => label === '分辨率' && value === '320×240'))
+    assert.ok(nodes.some((n) => n.type === 'callout' && n.tone === 'info'))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('old apps get a plain picture instead of a gallery', () => {
+  const root = tempRoot()
+  try {
+    const nodes = walk(fileView({
+      dir: '',
+      file: 'clip.mp4',
+      media: { kind: 'video', poster: 'asset:preview/p.jpg', width: 320, height: 240, duration: 3, aspect: 4 / 3, bytes: 1 },
+    }, root, caps({ components: undefined })))
+    assert.ok(!nodes.some((n) => n.type === 'gallery'))
+    const image = nodes.find((n) => n.type === 'image')
+    assert.equal(image.src, 'asset:preview/p.jpg')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a media conversion failure is explained', () => {
+  const root = tempRoot()
+  try {
+    const nodes = walk(fileView({ dir: '', file: 'x.heic', media: { error: 'convert-failed' } }, root, caps()))
+    const callout = nodes.find((n) => n.type === 'callout')
+    assert.equal(callout.tone, 'bad')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+// 用官方工具包的 App 视图解析器复核一遍媒体视图（找不到工具包就跳过）。
+const HOME = process.env.HOME ?? ''
+const KITS = [
+  process.env.DSH_PLUGIN_KIT,
+  join(process.env.DSH_HOME ?? (HOME === '' ? '' : join(HOME, '.dsh')), 'skills', 'dsh-go-plugin', 'kit'),
+  '/root/.dsh/skills/dsh-go-plugin/kit',
+].filter((kit) => typeof kit === 'string' && kit !== '')
+
+let checkView
+for (const dir of KITS) {
+  if (!existsSync(join(dir, 'lib', 'view-check.js'))) continue
+  try {
+    checkView = (await import(pathToFileURL(join(dir, 'lib', 'view-check.js')).href)).checkView
+    break
+  } catch {
+    /* 试下一个 */
+  }
+}
+
+test('media views pass the app view parser', { skip: checkView === undefined ? 'dsh-go-plugin 工具包不在本机' : false }, () => {
+  const root = tempRoot()
+  try {
+    const cases = [
+      { kind: 'image', asset: 'asset:preview/abc.jpg', width: 640, height: 480, aspect: 640 / 480, bytes: 123 },
+      { kind: 'video', poster: 'asset:preview/p.jpg', gif: 'asset:preview/l.gif', width: 320, height: 240, duration: 12.4, aspect: 4 / 3, bytes: 99 },
+      { kind: 'video', poster: 'asset:preview/p.jpg', width: 320, height: 240, duration: 12.4, aspect: 4 / 3, bytes: 99 },
+    ]
+    for (const media of cases) {
+      const result = checkView(fileView({ dir: '', file: `f.${media.kind === 'image' ? 'png' : 'mp4'}`, media }, root, caps()), { budget: 'panel', lang: 'zh' })
+      assert.equal(result.fatal, false, JSON.stringify(result.issues))
+      assert.equal(result.ok, true, JSON.stringify(result.issues))
+      assert.ok(result.issues.every((i) => i.kind === 'note'), JSON.stringify(result.issues))
+    }
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
