@@ -1,0 +1,71 @@
+{
+  "name": "dsh-go-workspace",
+  "version": "0.1.0",
+  "description": "Workspace panel for the dsh-go app: browse the workspace from the sidebar, preview text files, and upload files from the phone into uploads/<date>/.",
+  "license": "MIT",
+  "author": "miao",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-go",
+    "deepseek-harness",
+    "harness",
+    "plugin",
+    "workspace",
+    "files",
+    "upload",
+    "dshGo"
+  ],
+  "engines": {
+    "node": ">=22.19",
+    "dsh": ">=0.2.1-rc.2 <0.3.0-0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dshGo": {
+    "v": 1,
+    "title": {
+      "zh": "工作区",
+      "en": "Workspace"
+    },
+    "icon": "workspace",
+    "capabilities": [
+      "files"
+    ],
+    "contributes": {
+      "panels": [
+        {
+          "id": "files",
+          "title": {
+            "zh": "工作区",
+            "en": "Workspace"
+          },
+          "icon": "workspace",
+          "placement": [
+            "session.tab",
+            "features",
+            "chat.panel"
+          ]
+        }
+      ]
+    }
+  }
+}
