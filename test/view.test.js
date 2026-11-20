@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { rootOf } from '../lib/workspace.js'
-import { browseView, displayName, fileView, panelView } from '../lib/view.js'
+import { browseView, displayName, fileView, moveView, panelView } from '../lib/view.js'
 
 const PNG_1PX = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
 
@@ -127,7 +127,8 @@ test('file view shows a code block, size and copy actions', () => {
     assert.equal(code.code, '# hi')
     assert.equal(code.language, 'markdown')
     const actions = nodes.find((n) => n.type === 'actions')
-    assert.deepEqual(actions.items.map((i) => i.action), ['back', 'copyPath', 'copyText'])
+    assert.deepEqual(actions.items.map((i) => i.action), ['back', 'move', 'copyPath', 'copyText'])
+    assert.ok(nodes.some((n) => n.type === 'confirm' && n.id === 'deleteFile'))
     const kv = nodes.find((n) => n.type === 'keyValue')
     assert.equal(kv.items[0][0], '大小')
   } finally {
@@ -142,7 +143,7 @@ test('file view explains binary files without a code block', () => {
     assert.ok(nodes.some((n) => n.type === 'callout'))
     assert.ok(!nodes.some((n) => n.type === 'codeBlock'))
     const actions = nodes.find((n) => n.type === 'actions')
-    assert.deepEqual(actions.items.map((i) => i.action), ['back', 'copyPath'])
+    assert.deepEqual(actions.items.map((i) => i.action), ['back', 'move', 'copyPath'])
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -344,8 +345,7 @@ test('folder images show as two-column thumbnail cards', () => {
     assert.ok(gallery.items.some((item) => /^asset:preview\/[0-9a-f]+\.png$/.test(item.src)))
     assert.ok(gallery.items.every((item) => typeof item.caption === 'string' && item.caption.length > 0))
     assert.ok(!nodes.some((n) => n.type === 'row' && n.children?.some((c) => c.type === 'gallery')))
-    assert.equal(gallery.items[0].action, undefined)
-    assert.equal(gallery.items[0].action, undefined, 'tap opens the app viewer')
+    assert.deepEqual(gallery.items[0].action, { id: 'open', args: { path: 'pic.png' } })
     const list = nodes.find((n) => n.type === 'list')
     assert.ok(list)
     assert.ok(!list.items.some((i) => i.title === 'shot.png'), 'image row is replaced by its thumbnail')
@@ -380,6 +380,36 @@ test('a folder with many images falls back to the grid', () => {
     assert.equal(galleries.length, 1, 'one grid gallery, no per-image rows')
     assert.ok(galleries[0].items.length > 10)
     assert.ok(!nodes.some((n) => n.type === 'row' && n.children?.some((c) => c.type === 'gallery')))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('move view lists folders and offers move/cancel', () => {
+  const root = tempRoot()
+  try {
+    mkdirSync(join(root, 'target'), { recursive: true })
+    const nodes = walk(moveView({ mode: 'move', file: 'docs/note.md', moveDir: '' }, root, caps()))
+    const list = nodes.find((n) => n.type === 'list')
+    const titles = list.items.map((i) => i.title)
+    assert.ok(titles.includes('target') && titles.includes('docs'))
+    assert.deepEqual(list.items.find((i) => i.title === 'docs').action, { id: 'enterMove', args: { path: 'docs' } })
+    const actions = nodes.find((n) => n.type === 'actions')
+    assert.deepEqual(actions.items.map((i) => i.action), ['moveHere', 'upMove', 'cancelMove'])
+    assert.ok(nodes.some((n) => n.type === 'text' && String(n.text).includes('note.md')))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('empty folders offer a delete confirm', () => {
+  const root = tempRoot()
+  try {
+    mkdirSync(join(root, 'empty'), { recursive: true })
+    const nodes = walk(browseView({ dir: 'empty' }, root, caps(), join(root, '.thumbs')))
+    assert.ok(nodes.some((n) => n.type === 'confirm' && n.id === 'deleteDir'))
+    const atRoot = walk(browseView({ dir: '' }, root, caps(), join(root, '.thumbs')))
+    assert.ok(!atRoot.some((n) => n.type === 'confirm'))
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

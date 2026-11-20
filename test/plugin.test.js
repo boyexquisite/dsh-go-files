@@ -255,3 +255,93 @@ test('upload callback saves the picked files into uploads/<date>/', { skip: SKIP
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test('files can be moved into another folder from the panel', { skip: SKIP }, async () => {
+  const root = tempRoot()
+  const cache = join(root, '.cache')
+  try {
+    mkdirSync(join(root, 'archive'), { recursive: true })
+    writeFileSync(join(root, 'docs', 'note.md'), '# hi')
+    const host = makeHost()
+    const plugin = await import('../lib/index.js')
+    plugin.apply(host.ctx, { root, cacheDir: cache })
+    const scope = { sessionId: 'mv1' }
+
+    await host.invoke('files', { surface: 'panel', action: 'open', scope, value: { path: 'docs/note.md' } })
+    const start = await host.invoke('files', { surface: 'panel', action: 'move', scope })
+    assert.deepEqual(start.effects, [{ type: 'refresh', id: 'files' }])
+    const picking = await host.view('files', scope, { features: ['files'] })
+    const pickNodes = walk(picking.view)
+    const pickList = pickNodes.find((n) => n.type === 'list')
+    assert.ok(pickList.items.some((i) => i.title === 'archive'))
+
+    await host.invoke('files', { surface: 'panel', action: 'enterMove', scope, value: { path: 'archive' } })
+    const moved = await host.invoke('files', { surface: 'panel', action: 'moveHere', scope })
+    assert.match(moved.effects[0].text, /已移动到 archive/)
+    assert.ok(existsSync(join(root, 'archive', 'note.md')))
+    assert.ok(!existsSync(join(root, 'docs', 'note.md')))
+
+    const after = await host.view('files', scope, { features: ['files'] })
+    const titles = walk(after.view).find((n) => n.type === 'list')?.items.map((i) => i.title)
+    assert.ok(titles?.includes('note.md'))
+    assert.deepEqual(host.violations, [])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(cache, { recursive: true, force: true })
+  }
+})
+
+test('deleting a file needs the confirmation and then removes it', { skip: SKIP }, async () => {
+  const root = tempRoot()
+  const cache = join(root, '.cache')
+  try {
+    writeFileSync(join(root, 'docs', 'note.md'), '# hi')
+    const host = makeHost()
+    const plugin = await import('../lib/index.js')
+    plugin.apply(host.ctx, { root, cacheDir: cache })
+    const scope = { sessionId: 'del1' }
+
+    await host.invoke('files', { surface: 'panel', action: 'open', scope, value: { path: 'docs/note.md' } })
+    const cancelled = await host.invoke('files', { surface: 'panel', action: 'deleteFile', scope, value: { confirmed: false } })
+    assert.match(cancelled.effects[0].text, /取消/)
+    assert.ok(existsSync(join(root, 'docs', 'note.md')))
+
+    const deleted = await host.invoke('files', { surface: 'panel', action: 'deleteFile', scope, value: { confirmed: true } })
+    assert.match(deleted.effects[0].text, /已删除/)
+    assert.ok(!existsSync(join(root, 'docs', 'note.md')))
+    const back = await host.view('files', scope, { features: ['files'] })
+    const backNodes = walk(back.view)
+    assert.ok(backNodes.some((n) => n.type === 'list'), 'back to the folder listing')
+    assert.ok(!backNodes.some((n) => n.type === 'codeBlock'), 'file preview closed')
+    assert.deepEqual(host.violations, [])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(cache, { recursive: true, force: true })
+  }
+})
+
+test('an empty folder can be deleted from its page', { skip: SKIP }, async () => {
+  const root = tempRoot()
+  const cache = join(root, '.cache')
+  try {
+    mkdirSync(join(root, 'empty'), { recursive: true })
+    const host = makeHost()
+    const plugin = await import('../lib/index.js')
+    plugin.apply(host.ctx, { root, cacheDir: cache })
+    const scope = { sessionId: 'del2' }
+
+    await host.invoke('files', { surface: 'panel', action: 'enter', scope, value: { path: 'empty' } })
+    const page = await host.view('files', scope, { features: ['files'] })
+    assert.ok(walk(page.view).some((n) => n.type === 'confirm' && n.id === 'deleteDir'))
+
+    const deleted = await host.invoke('files', { surface: 'panel', action: 'deleteDir', scope, value: { confirmed: true } })
+    assert.ok(deleted.effects.some((e) => e.type === 'refresh'))
+    assert.ok(!existsSync(join(root, 'empty')))
+    const rootView = await host.view('files', scope, { features: ['files'] })
+    assert.ok(!walk(rootView.view).find((n) => n.type === 'list')?.items.some((i) => i.title === 'empty'))
+    assert.deepEqual(host.violations, [])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(cache, { recursive: true, force: true })
+  }
+})

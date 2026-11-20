@@ -1,10 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   dateFolder,
+  deleteEmptyFolder,
+  deleteFile,
   humanSize,
   iconOf,
   languageOf,
@@ -18,6 +20,7 @@ import {
   shortTime,
   uniquePath,
   UPLOAD_DIR,
+  moveFile,
   workspaceRoot,
 } from '../lib/workspace.js'
 
@@ -246,6 +249,62 @@ test('savePicked reports a folder it cannot create', () => {
     assert.equal(result.error, 'mkdir')
     assert.equal(result.saved.length, 0)
     assert.equal(result.failed.length, 1)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('deleteFile removes a file but refuses folders, links and escapes', () => {
+  const root = tempRoot()
+  const outside = tempRoot()
+  try {
+    writeFileSync(join(root, 'a.txt'), 'x')
+    mkdirSync(join(root, 'dir'))
+    writeFileSync(join(outside, 'secret.txt'), 'secret')
+    symlinkSync(join(outside, 'secret.txt'), join(root, 'link.txt'))
+    assert.equal(deleteFile(root, 'a.txt').name, 'a.txt')
+    assert.ok(!existsSync(join(root, 'a.txt')))
+    assert.equal(deleteFile(root, 'dir').error, 'not-file')
+    assert.equal(deleteFile(root, 'link.txt').error, 'link')
+    assert.equal(deleteFile(root, '../etc').error, 'denied')
+    assert.equal(deleteFile(root, '').error, 'denied')
+    assert.equal(deleteFile(root, 'nope').error, 'missing')
+    assert.ok(existsSync(join(outside, 'secret.txt')))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(outside, { recursive: true, force: true })
+  }
+})
+
+test('deleteEmptyFolder only deletes empty folders', () => {
+  const root = tempRoot()
+  try {
+    mkdirSync(join(root, 'empty'))
+    mkdirSync(join(root, 'full'))
+    writeFileSync(join(root, 'full', 'x.txt'), 'x')
+    assert.equal(deleteEmptyFolder(root, 'empty').name, 'empty')
+    assert.equal(deleteEmptyFolder(root, 'full').error, 'not-empty')
+    assert.equal(deleteEmptyFolder(root, '').error, 'denied')
+    assert.equal(deleteEmptyFolder(root, 'empty').error, 'missing')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('moveFile renames inside the workspace and never overwrites', () => {
+  const root = tempRoot()
+  try {
+    mkdirSync(join(root, 'a'))
+    mkdirSync(join(root, 'b'))
+    writeFileSync(join(root, 'a', 'x.txt'), 'hello')
+    const moved = moveFile(root, 'a/x.txt', 'b')
+    assert.deepEqual(moved, { name: 'x.txt', dir: 'b' })
+    writeFileSync(join(root, 'a', 'x.txt'), 'again')
+    assert.equal(moveFile(root, 'a/x.txt', 'b').error, 'exists')
+    assert.equal(moveFile(root, 'b/x.txt', 'b').error, 'same-dir')
+    assert.equal(moveFile(root, 'a/x.txt', 'nope').error, 'no-target')
+    assert.equal(moveFile(root, '../x', 'b').error, 'denied')
+    assert.equal(moveFile(root, 'a/x.txt', '../out').error, 'no-target')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
