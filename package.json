@@ -1,6 +1,6 @@
 {
   "name": "dsh-go-files",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Workspace panel for the dsh-go app: browse the workspace from the sidebar, preview text/images/videos, upload from the phone, move and delete files.",
   "license": "MIT",
   "author": "miao",
