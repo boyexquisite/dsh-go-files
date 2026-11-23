@@ -414,3 +414,14 @@ test('empty folders offer a delete confirm', () => {
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test('text file preview degrades to text when codeBlock is unavailable', () => {
+  const root = tempRoot()
+  try {
+    const nodes = walk(fileView({ dir: '', file: 'a.txt' }, root, caps({ components: ['stack', 'text'] })))
+    assert.ok(!nodes.some((n) => n.type === 'codeBlock'))
+    assert.ok(nodes.some((n) => n.type === 'text' && n.text === 'hello world'))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})

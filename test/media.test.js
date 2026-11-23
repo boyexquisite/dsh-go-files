@@ -269,3 +269,22 @@ test('prepareFolderThumbs only picks image files', { skip: SKIP }, () => {
     rmSync(join(cache, '..'), { recursive: true, force: true })
   }
 })
+
+test('prepareVideo skips gif without ENOENT for >1080p videos', { skip: SKIP }, () => {
+  const { root, cache } = fixtures()
+  try {
+    execFileSync('ffmpeg', [
+      '-y', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc=size=2560x1440:rate=5',
+      '-t', '1', '-c:v', 'mpeg4', '-pix_fmt', 'yuv420p', join(root, 'uhd.mp4'),
+    ], { timeout: 30000 })
+    const result = prepareVideo(root, 'uhd.mp4', cache)
+    assert.equal(result.kind, 'video')
+    assert.equal(result.gif, undefined)
+    assert.ok(result.poster.startsWith('asset:preview/'))
+    const posterFile = join(cache, result.poster.slice('asset:preview/'.length))
+    assert.ok(existsSync(posterFile))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(join(cache, '..'), { recursive: true, force: true })
+  }
+})
