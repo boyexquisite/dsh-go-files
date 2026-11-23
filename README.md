@@ -24,7 +24,7 @@ dsh plugin --profile web remove dsh-go-files
 
 ## 工作区根目录
 
-默认取 DSH 工作区注册表里的第一个工作区（本机就是 `/opt/miao-workspace`），取不到才退回引擎当前目录；可用环境变量 `DSH_WORKSPACE_ROOT` 强制指定。
+默认取 DSH 工作区注册表里的第一个工作区（本机就是 `/opt/miao/dev/workspace`），取不到才退回引擎当前目录；可用环境变量 `DSH_WORKSPACE_ROOT` 强制指定。
 
 ## 预览缓存
 
