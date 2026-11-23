@@ -4,7 +4,7 @@ A native **Workspace** panel for the dsh-go phone app: browse the host's workspa
 
 - **Where**: conversation details → Plugins tab (`session.tab`); also under All features and the chat page's Plugins sheet.
 - **Browse**: folders first; images as two-column thumbnail cards (tap a card for details, tap the picture for full screen), videos as cover + silent clip, other files open a text preview.
-- **Upload**: system picker → workspace `uploads/<date>/`, collisions get a numeric suffix. 8 MiB per file, up to 4 files / 16 MiB per selection.
+- **Upload**: system picker → workspace `artifacts/uploads/<date>/` (parent dirs are created on demand), collisions get a numeric suffix. 8 MiB per file, up to 4 files / 16 MiB per selection.
 - **Move / delete**: from a file's detail page; delete needs confirmation, only empty folders can be deleted, symlinks and paths outside the workspace are refused.
 - **Safety**: every path is confined to the workspace root.
 

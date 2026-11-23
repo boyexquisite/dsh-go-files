@@ -161,7 +161,7 @@ test('uniquePath never overwrites', () => {
   }
 })
 
-test('savePicked writes into uploads/<date>/ and reports results', () => {
+test('savePicked writes into artifacts/uploads/<date>/ and reports results', () => {
   const root = tempRoot()
   try {
     const files = [
@@ -244,9 +244,10 @@ test('workspaceRoot prefers env, then the DSH workspace registry', () => {
 test('savePicked reports a folder it cannot create', () => {
   const root = tempRoot()
   try {
-    const blocker = join(root, 'uploads')
+    // artifacts 是个普通文件 → 默认落点 artifacts/uploads/<date>/ 建不出来，整批失败不抛异常
+    const blocker = join(root, 'artifacts')
     writeFileSync(blocker, 'not a dir')
-    const result = savePicked([{ handle: 'h', name: 'a.txt' }], () => Buffer.from('x'), { root, folder: 'uploads/2026-11-20' })
+    const result = savePicked([{ handle: 'h', name: 'a.txt' }], () => Buffer.from('x'), { root, now: new Date(2026, 10, 20, 12) })
     assert.equal(result.error, 'mkdir')
     assert.equal(result.saved.length, 0)
     assert.equal(result.failed.length, 1)
@@ -344,6 +345,32 @@ test('previewFile refuses a FIFO instead of hanging', () => {
   }
 })
 
+test('savePicked creates artifacts/uploads on demand and still refuses a symlinked artifacts', () => {
+  const root = tempRoot()
+  const other = tempRoot()
+  const outside = tempRoot()
+  try {
+    const result = savePicked([{ handle: 'h', name: 'a.txt' }], () => Buffer.from('x'),
+      { root, now: new Date(2026, 10, 20, 12) })
+    assert.equal(result.error, undefined)
+    assert.deepEqual(result.folder, `${UPLOAD_DIR}/2026-11-20`)
+    assert.deepEqual(result.saved, [{ name: 'a.txt', bytes: 1 }])
+    assert.ok(existsSync(join(root, 'artifacts', 'uploads', '2026-11-20', 'a.txt')))
+
+    // 多一级目录不等于放宽校验：artifacts 换成指向工作区外的符号链接，默认落点整批拒绝
+    symlinkSync(outside, join(other, 'artifacts'))
+    const escaped = savePicked([{ handle: 'h', name: 'a.txt' }], () => Buffer.from('x'),
+      { root: other, now: new Date(2026, 10, 20, 12) })
+    assert.equal(escaped.error, 'mkdir')
+    assert.equal(escaped.saved.length, 0)
+    assert.ok(!existsSync(join(outside, 'uploads')))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(other, { recursive: true, force: true })
+    rmSync(outside, { recursive: true, force: true })
+  }
+})
+
 test('savePicked enforces a per-file size cap and stays inside the workspace', () => {
   const root = tempRoot()
   const outside = tempRoot()
@@ -357,7 +384,7 @@ test('savePicked enforces a per-file size cap and stays inside the workspace', (
     assert.deepEqual(result.saved.map((f) => f.name), ['ok.bin'])
     assert.deepEqual(result.failed.map((f) => f.name), ['big.bin', 'declared.bin'])
 
-    // uploads 是指向工作区外的符号链接：整批拒绝，外部目录不被写入
+    // linked 是指向工作区外的符号链接：整批拒绝，外部目录不被写入
     symlinkSync(outside, join(root, 'linked'))
     const escaped = savePicked([{ handle: 'a', name: 'x.txt' }], () => Buffer.from('x'), { root, folder: 'linked/day' })
     assert.equal(escaped.error, 'mkdir')

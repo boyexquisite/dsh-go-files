@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { dateFolder, rootOf } from '../lib/workspace.js'
+import { dateFolder, rootOf, UPLOAD_DIR } from '../lib/workspace.js'
 
 const HOME = process.env.HOME ?? ''
 const KITS = [
@@ -214,7 +214,7 @@ test('opening an image prepares an asset the app can draw', { skip: SKIP }, asyn
   }
 })
 
-test('upload callback saves the picked files into uploads/<date>/', { skip: SKIP }, async () => {
+test('upload callback saves the picked files into artifacts/uploads/<date>/', { skip: SKIP }, async () => {
   const root = tempRoot()
   try {
     const host = makeHost()
@@ -242,13 +242,14 @@ test('upload callback saves the picked files into uploads/<date>/', { skip: SKIP
     assert.match(toast.text, /1 个，1 个失败/)
     assert.ok(result.effects.some((e) => e.type === 'refresh'))
 
-    const view = await host.view('files', scope, { features: ['files'] })
-    const nodes = walk(view.view)
+    const folder = `${UPLOAD_DIR}/${dateFolder()}`
+    const nodes = walk((await host.view('files', scope, { features: ['files'] })).view)
     const list = nodes.find((n) => n.type === 'list')
     assert.deepEqual(list.items.map((i) => i.title), ['note.txt'])
-    assert.ok(nodes.some((n) => n.type === 'text' && n.text === 'uploads/' + dateFolder()))
+    // 面板自动进了刚上传的目录；路径是 artifacts/uploads/<date>，不再是根 uploads/
+    assert.ok(nodes.some((n) => n.type === 'text' && n.text === folder))
 
-    const saved = join(root, 'uploads', dateFolder(), 'note.txt')
+    const saved = join(root, 'artifacts', 'uploads', dateFolder(), 'note.txt')
     assert.equal(readFileSync(saved, 'utf8'), 'hello from the phone')
     assert.deepEqual(host.violations, [])
   } finally {

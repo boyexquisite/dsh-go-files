@@ -4,7 +4,7 @@ dsh-go 手机 App 里的「工作区」原生面板：在侧栏「插件」页�
 
 - **在哪看**：对话详情页 → 插件页签（`session.tab`），也出现在「全部功能」和聊天页的「插件」弹层。
 - **浏览**：文件夹在前；图片按两列缩略图卡片排（点卡片进详情，再点图全屏缩放、保存），视频给封面 + 无声小动图，其他文件点开看预览。
-- **上传**：系统选择器选文件 → 落到工作区 `uploads/<日期>/`，同名自动加序号不覆盖。单个 ≤ 8 MiB，一次最多 4 个、合计 ≤ 16 MiB。
+- **上传**：系统选择器选文件 → 落到工作区 `artifacts/uploads/<日期>/`（父目录不存在会自动建），同名自动加序号不覆盖。单个 ≤ 8 MiB，一次最多 4 个、合计 ≤ 16 MiB。
 - **移动**：文件详情页「移动到…」→ 选目标文件夹 → 移动；不覆盖同名文件。
 - **删除**：文件详情页「删除」要确认；空文件夹在它自己的页面能删；非空文件夹不允许删；符号链接和工作区外的路径一律不碰。
 - **边界**：所有文件操作都限制在工作区根目录内，`../`、绝对路径、指向外面的符号链接都会被拒。
@@ -13,7 +13,7 @@ dsh-go 手机 App 里的「工作区」原生面板：在侧栏「插件」页�
 
 ```sh
 dsh plugin --profile web add dsh-go-files
-# 或指定版本：dsh plugin --profile web add dsh-go-files@0.2.5
+# 或指定版本：dsh plugin --profile web add dsh-go-files@0.2.7
 ```
 
 卸载：
@@ -42,7 +42,7 @@ node "$DSH_HOME/skills/dsh-go-plugin/kit/bin/check.mjs" . --load   # 需要本�
 ## 发布
 
 ```sh
-node scripts/release.mjs 0.2.5
+node scripts/release.mjs 0.2.7
 ```
 
 推 `main` + `v*` tag 后由 GitHub Actions 跑测试并 `npm publish --provenance`、建 Release。市场条目见 `docs/market-entry.json`。
