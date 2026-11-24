@@ -13,7 +13,7 @@ dsh-go 手机 App 里的「工作区」原生面板：在侧栏「插件」页�
 
 ```sh
 dsh plugin --profile web add dsh-go-files
-# 或指定版本：dsh plugin --profile web add dsh-go-files@0.2.7
+# 或指定版本：dsh plugin --profile web add dsh-go-files@0.2.8
 ```
 
 卸载：
