@@ -59,6 +59,26 @@ test('resolveInside refuses a symlink that leads outside', () => {
   }
 })
 
+test('listDir never follows an outside directory symlink for child counts', () => {
+  const root = tempRoot()
+  const outside = tempRoot()
+  try {
+    writeFileSync(join(outside, 'one.txt'), '1')
+    writeFileSync(join(outside, 'two.txt'), '2')
+    symlinkSync(outside, join(root, 'escape'))
+    const listing = listDir(root, '')
+    const entry = listing.entries.find((item) => item.name === 'escape')
+    assert.equal(entry.link, true)
+    assert.equal(entry.dir, false)
+    assert.equal(entry.count, undefined)
+    assert.equal(listing.totalDir, 0)
+    assert.equal(resolveInside(root, 'escape'), undefined)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(outside, { recursive: true, force: true })
+  }
+})
+
 test('listDir sorts folders first, counts, and hides .git', () => {
   const root = tempRoot()
   try {

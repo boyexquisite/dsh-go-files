@@ -1,8 +1,8 @@
 // 图片 / 视频预览的转换测试。机器上没有 ffmpeg 时整组跳过。
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { execFileSync, spawn } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -115,6 +115,56 @@ test('prepareImage re-encodes an oversized image into the budget', { skip: SKIP 
   } finally {
     rmSync(root, { recursive: true, force: true })
     rmSync(join(cache, '..'), { recursive: true, force: true })
+  }
+})
+
+test('prepareImage never serves or overwrites through a cache symlink', () => {
+  const { root, cache } = fixtures()
+  const outside = tmp('dsh-cache-outside-')
+  try {
+    writeFileSync(join(root, 'small.png'), 'new-image')
+    const first = prepareImage(root, 'small.png', cache, { skipProbe: true })
+    const target = join(cache, first.asset.slice('asset:preview/'.length))
+    unlinkSync(target)
+    writeFileSync(join(outside, 'secret'), 'do-not-change')
+    symlinkSync(join(outside, 'secret'), target)
+    const second = prepareImage(root, 'small.png', cache, { skipProbe: true })
+    assert.equal(second.error, 'denied')
+    assert.equal(readFileSync(join(outside, 'secret'), 'utf8'), 'do-not-change')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(join(cache, '..'), { recursive: true, force: true })
+    rmSync(outside, { recursive: true, force: true })
+  }
+})
+
+test('concurrent image conversions use isolated temporary outputs', { skip: SKIP }, async () => {
+  const { root, cache } = fixtures()
+  const tools = tmp('dsh-ffmpeg-wrapper-')
+  const log = join(tools, 'outputs.log')
+  const wrapper = join(tools, 'ffmpeg-wrapper.sh')
+  try {
+    makeImage(root, 'huge.png', 5000, 4000)
+    writeFileSync(wrapper, `#!/bin/sh\nfor last do :; done\nprintf '%s\\n' "$last" >> ${JSON.stringify(log)}\nexec ffmpeg "$@"\n`, { mode: 0o755 })
+    const moduleUrl = new URL('../lib/media.js', import.meta.url).href
+    const code = `import { prepareImage } from ${JSON.stringify(moduleUrl)}; const r = prepareImage(process.argv[1], 'huge.png', process.argv[2]); if (r.error) { console.error(r.error); process.exit(2) }`
+    const runChild = () => new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, ['-e', code, root, cache], { env: { ...process.env, FFMPEG_PATH: wrapper } })
+      let stderr = ''
+      child.stderr.on('data', (chunk) => { stderr += chunk })
+      child.on('error', reject)
+      child.on('exit', (status) => status === 0 ? resolve() : reject(new Error(`child ${status}: ${stderr}`)))
+    })
+    await Promise.all([runChild(), runChild()])
+    const outputs = readFileSync(log, 'utf8').trim().split('\n')
+    assert.equal(outputs.length, 2)
+    assert.notEqual(outputs[0], outputs[1], 'each process must write a private temporary file')
+    assert.equal(readdirSync(cache).filter((name) => !name.startsWith('.')).length, 1)
+    assert.equal(readdirSync(cache).filter((name) => name.startsWith('.')).length, 0)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(join(cache, '..'), { recursive: true, force: true })
+    rmSync(tools, { recursive: true, force: true })
   }
 })
 

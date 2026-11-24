@@ -28,7 +28,7 @@ dsh plugin --profile web remove dsh-go-files
 
 ## 预览缓存
 
-图片 / 视频预览会转存到插件自己的 `assets/preview/`（App 的 `asset:` 只能引用这里），最多留 64 个、7 天自动清理，不进 git。视频预览和超大图压缩需要主机有 `ffmpeg` / `ffprobe`，没有时退化成只显示文件信息；超过 1080p 的视频只给封面，避免拖过面板 3 秒窗口。
+图片 / 视频预览会转存到插件自己的 `assets/preview/`（App 的 `asset:` 只能引用这里），最多留 64 个、7 天自动清理，不进 git。缓存只接受普通文件，复制/转换先写独立临时文件再原子改名，多进程同时预览也不会暴露半张图。视频预览和超大图压缩需要主机有 `ffmpeg` / `ffprobe`，没有时退化成只显示文件信息；超过 1080p 的视频只给封面，避免拖过面板 3 秒窗口。
 
 ## 开发
 
@@ -42,7 +42,7 @@ node "$DSH_HOME/skills/dsh-go-plugin/kit/bin/check.mjs" . --load   # 需要本�
 ## 发布
 
 ```sh
-node scripts/release.mjs 0.2.7
+node scripts/release.mjs <version>
 ```
 
 推 `main` + `v*` tag 后由 GitHub Actions 跑测试并 `npm publish --provenance`、建 Release。市场条目见 `docs/market-entry.json`。
