@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { apply } from '../lib/index.js'
@@ -74,23 +74,28 @@ test('missing paths through outside links and upload directory swaps are rejecte
   }
 })
 
-test('atomic move refuses a target created immediately before the syscall', { skip: process.platform !== 'linux' }, () => {
+test('atomic move refuses an existing target and never runs PATH helpers', { skip: process.platform !== 'linux' }, () => {
+  // 2026-11-27 全检 P1：旧实现用 spawnSync('python3') 走 PATH，这个用例当时用一个假
+  // python3 证明「目标被抢占」时也能执行任意代码。现在实现改成 Node 原生 link+unlink：
+  // 既验证不覆盖语义，也验证 PATH 里的恶意 python3 根本不会被调用。
   const root = rootOf(mkdtempSync(join(tmpdir(), 'files-race-')))
   const oldPath = process.env.PATH
   try {
     mkdirSync(join(root, 'src')); mkdirSync(join(root, 'dst')); mkdirSync(join(root, 'bin'))
     writeFileSync(join(root, 'src', 'a'), 'source')
-    const shim = join(root, 'bin', 'python3')
-    writeFileSync(shim, '#!/bin/sh\nprintf rival > "$4"\nexec /usr/bin/python3 "$@"\n')
-    chmodSync(shim, 0o755)
+    writeFileSync(join(root, 'bin', 'python3'), '#!/bin/sh\nprintf pwned > "$4"\n')
+    chmodSync(join(root, 'bin', 'python3'), 0o755)
+    writeFileSync(join(root, 'dst', 'a'), 'rival')
     process.env.PATH = join(root, 'bin')
     assert.equal(moveFile(root, 'src/a', 'dst').error, 'exists')
     assert.equal(readFileSync(join(root, 'src', 'a'), 'utf8'), 'source')
     assert.equal(readFileSync(join(root, 'dst', 'a'), 'utf8'), 'rival')
+    // 正常移动不依赖任何外部解释器：清空 PATH 也能成功，且源消失
+    unlinkSync(join(root, 'dst', 'a'))
     process.env.PATH = join(root, 'missing')
-    assert.equal(moveFile(root, 'src/a', '').error, 'unsupported')
-    assert.equal(readFileSync(join(root, 'src', 'a'), 'utf8'), 'source')
-    assert.equal(existsSync(join(root, 'a')), false)
+    assert.equal(moveFile(root, 'src/a', 'dst').name, 'a')
+    assert.equal(existsSync(join(root, 'src', 'a')), false)
+    assert.equal(readFileSync(join(root, 'dst', 'a'), 'utf8'), 'source')
   } finally {
     if (oldPath === undefined) delete process.env.PATH; else process.env.PATH = oldPath
     rmSync(root, { recursive: true, force: true })
