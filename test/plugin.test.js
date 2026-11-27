@@ -277,7 +277,9 @@ test('files can be moved into another folder from the panel', { skip: SKIP }, as
     assert.ok(pickList.items.some((i) => i.title === 'archive'))
 
     await host.invoke('files', { surface: 'panel', action: 'enterMove', scope, value: { path: 'archive' } })
-    const moved = await host.invoke('files', { surface: 'panel', action: 'moveHere', scope })
+    const targetView = await host.view('files', scope, { features: ['files'] })
+    const moveId = walk(targetView.view).flatMap((n) => n.items ?? []).find((item) => item.label === '移动到这里').action
+    const moved = await host.invoke('files', { surface: 'panel', action: moveId, scope })
     assert.match(moved.effects[0].text, /已移动到 archive/)
     assert.ok(existsSync(join(root, 'archive', 'note.md')))
     assert.ok(!existsSync(join(root, 'docs', 'note.md')))
@@ -303,11 +305,13 @@ test('deleting a file needs the confirmation and then removes it', { skip: SKIP 
     const scope = { sessionId: 'del1' }
 
     await host.invoke('files', { surface: 'panel', action: 'open', scope, value: { path: 'docs/note.md' } })
-    const cancelled = await host.invoke('files', { surface: 'panel', action: 'deleteFile', scope, value: { confirmed: false } })
+    const firstId = walk((await host.view('files', scope, { features: ['files'] })).view).find((n) => n.type === 'confirm').id
+    const cancelled = await host.invoke('files', { surface: 'panel', action: firstId, scope, value: { confirmed: false } })
     assert.match(cancelled.effects[0].text, /取消/)
     assert.ok(existsSync(join(root, 'docs', 'note.md')))
 
-    const deleted = await host.invoke('files', { surface: 'panel', action: 'deleteFile', scope, value: { confirmed: true } })
+    const id = walk((await host.view('files', scope, { features: ['files'] })).view).find((n) => n.type === 'confirm').id
+    const deleted = await host.invoke('files', { surface: 'panel', action: id, scope, value: { confirmed: true } })
     assert.match(deleted.effects[0].text, /已删除/)
     assert.ok(!existsSync(join(root, 'docs', 'note.md')))
     const back = await host.view('files', scope, { features: ['files'] })
@@ -333,9 +337,10 @@ test('an empty folder can be deleted from its page', { skip: SKIP }, async () =>
 
     await host.invoke('files', { surface: 'panel', action: 'enter', scope, value: { path: 'empty' } })
     const page = await host.view('files', scope, { features: ['files'] })
-    assert.ok(walk(page.view).some((n) => n.type === 'confirm' && n.id === 'deleteDir'))
+    const id = walk(page.view).find((n) => n.type === 'confirm').id
+    assert.ok(id)
 
-    const deleted = await host.invoke('files', { surface: 'panel', action: 'deleteDir', scope, value: { confirmed: true } })
+    const deleted = await host.invoke('files', { surface: 'panel', action: id, scope, value: { confirmed: true } })
     assert.ok(deleted.effects.some((e) => e.type === 'refresh'))
     assert.ok(!existsSync(join(root, 'empty')))
     const rootView = await host.view('files', scope, { features: ['files'] })
