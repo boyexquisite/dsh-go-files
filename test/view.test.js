@@ -240,6 +240,9 @@ test('file headers stay small and only show the folder', () => {
 })
 
 test('displayName shortens the middle of long names', () => {
+  // 2026-11-28 修复 P2-2：控制字符 / 双向控制符不能进展示文本
+  assert.equal(displayName('a\u202eb\n.txt'), 'ab.txt')
+  assert.equal(displayName('\u0007bell\u009btxt'), 'belltxt')
   assert.equal(displayName('a.txt'), 'a.txt')
   assert.equal(displayName('x'.repeat(10)), 'x'.repeat(10))
   const long = displayName('x'.repeat(80), 20)
@@ -337,6 +340,9 @@ test('folder images show as two-column thumbnail cards', () => {
   const root = tempRoot()
   const cache = join(root, '.thumbs')
   try {
+    // 2026-11-28：P1-3 之后「尺寸读不出来的图不复制」，缩略图要求真图；pic.png 在共享夹具里
+    // 是 1 字节的坏图（专门用来测二进制预览），这里换成真 PNG 只为本用例的顺序断言。
+    writeFileSync(join(root, 'pic.png'), Buffer.from(PNG_1PX, 'base64'))
     writeFileSync(join(root, 'shot.png'), Buffer.from(PNG_1PX, 'base64'))
     const nodes = walk(browseView({ dir: '' }, root, caps(), cache))
     const gallery = nodes.find((n) => n.type === 'gallery')

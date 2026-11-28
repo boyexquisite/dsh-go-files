@@ -13,6 +13,7 @@ import {
   MAX_SIDE,
   cacheDirOf,
   fitBox,
+  fitFilter,
   formatDuration,
   mediaKind,
   prepareImage,
@@ -36,6 +37,9 @@ function has(cmd) {
 
 const FFMPEG = has('ffmpeg') && has('ffprobe')
 const SKIP = FFMPEG ? false : '没有 ffmpeg / ffprobe'
+
+// 1×1 PNG（不用 ffmpeg 也能走「直接复制」分支的真实图片）。
+const PNG_1PX = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
 
 function tmp(prefix) {
   return rootOf(mkdtempSync(join(tmpdir(), prefix)))
@@ -122,8 +126,10 @@ test('prepareImage never serves or overwrites through a cache symlink', () => {
   const { root, cache } = fixtures()
   const outside = tmp('dsh-cache-outside-')
   try {
-    writeFileSync(join(root, 'small.png'), 'new-image')
+    // 2026-11-28：P1-3 之后「尺寸未知的图不再直接复制」，这里要一张真图才会走复制分支。
+    writeFileSync(join(root, 'small.png'), Buffer.from(PNG_1PX, 'base64'))
     const first = prepareImage(root, 'small.png', cache, { skipProbe: true })
+    assert.equal(first.error, undefined)
     const target = join(cache, first.asset.slice('asset:preview/'.length))
     unlinkSync(target)
     writeFileSync(join(outside, 'secret'), 'do-not-change')
@@ -337,4 +343,114 @@ test('prepareVideo skips gif without ENOENT for >1080p videos', { skip: SKIP }, 
     rmSync(root, { recursive: true, force: true })
     rmSync(join(cache, '..'), { recursive: true, force: true })
   }
+})
+
+// 2026-11-28 修复 P1-3：尺寸未知（WebP 以前读不到）或极窄比例的图，不能整张扔给 App。
+test('an oversized WebP is re-encoded instead of copied as-is', { skip: SKIP }, () => {
+  const { root, cache } = fixtures()
+  try {
+    makeImage(root, 'big.webp', 5000, 4000)
+    const result = prepareImage(root, 'big.webp', cache, { skipProbe: true })
+    assert.equal(result.error, undefined)
+    assert.match(result.asset, /\.jpg$/, '超限图必须重编码')
+    assert.ok(result.width <= MAX_SIDE && result.height <= MAX_SIDE)
+    assert.ok(result.width * result.height <= MAX_PIXELS)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(join(cache, '..'), { recursive: true, force: true })
+  }
+})
+
+test('a 2×10000 strip cannot stay 10000 tall', { skip: SKIP }, () => {
+  const { root, cache } = fixtures()
+  try {
+    makeImage(root, 'strip.png', 2, 10000)
+    const result = prepareImage(root, 'strip.png', cache)
+    assert.equal(result.error, undefined)
+    assert.ok(result.height <= MAX_SIDE, `height ${result.height} over budget`)
+    assert.ok(result.width * result.height <= MAX_PIXELS)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(join(cache, '..'), { recursive: true, force: true })
+  }
+})
+
+// 2026-11-28 修复 P2-4：0.2 秒的视频以前被 seek 到 0.5 秒，抽不出封面。
+test('prepareVideo extracts a poster from a very short clip', { skip: SKIP }, () => {
+  const { root, cache } = fixtures()
+  try {
+    makeVideo(root, 'short.mp4', 0.2)
+    const result = prepareVideo(root, 'short.mp4', cache)
+    assert.equal(result.error, undefined)
+    const file = join(cache, result.poster.slice('asset:preview/'.length))
+    assert.ok(existsSync(file))
+    assert.ok(statSync(file).size > 1000, 'poster should not be an empty frame')
+    assert.equal(probe(file).width, 320)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(join(cache, '..'), { recursive: true, force: true })
+  }
+})
+
+// ── 2026-11-28 第二轮 A2：单边 4096 与总像素上限统一后，这几张正常图都要能过 ──────
+test('images at the app limits preview without conversion', { skip: SKIP }, () => {
+  const { root, cache } = fixtures()
+  try {
+    for (const [width, height] of [[4096, 1024], [2000, 2000], [4000, 3000]]) {
+      const name = `at-${width}x${height}.png`
+      makeImage(root, name, width, height)
+      // canConvert:false = 模拟没有 ffmpeg 的主机：这几张必须在「原样复制」这一层就过。
+      const result = prepareImage(root, name, cache, { canConvert: false })
+      assert.equal(result.error, undefined, `${name}: ${result.error}`)
+      assert.equal(result.width, width)
+      assert.equal(result.height, height)
+      assert.equal(result.dimsUnknown, false)
+      assert.match(result.asset, /\.png$/)
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(join(cache, '..'), { recursive: true, force: true })
+  }
+})
+
+// ── 2026-11-28 第二轮 A1：缺 ffmpeg 不能把「能看」变成「全灭」 ──────────────────
+test('unknown-size images still preview when the host cannot convert', () => {
+  const { root, cache } = fixtures()
+  try {
+    writeFileSync(join(root, 'mystery.png'), 'not really a png')
+    const fallback = prepareImage(root, 'mystery.png', cache, { canConvert: false })
+    assert.equal(fallback.error, undefined)
+    assert.equal(fallback.dimsUnknown, true)
+    assert.match(fallback.asset, /\.png$/)
+    assert.equal(readFileSync(join(cache, fallback.asset.slice('asset:preview/'.length)), 'utf8'), 'not really a png')
+    // 有工具时同一种坏文件走转码，转不出来就如实报错，不谎报成功。
+    assert.equal(prepareImage(root, 'mystery.png', cache, { canConvert: true }).error, 'convert-failed')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(join(cache, '..'), { recursive: true, force: true })
+  }
+})
+
+// ── 2026-11-28 第二轮 N2：兜底缩放不能再把比例压扁 ────────────────────────────
+test('a very wide image keeps its aspect ratio when scaled', { skip: SKIP }, () => {
+  const { root, cache } = fixtures()
+  try {
+    makeImage(root, 'wide.png', 5000, 500)
+    const result = prepareImage(root, 'wide.png', cache)
+    assert.equal(result.error, undefined)
+    assert.ok(result.width > 0 && result.height > 0)
+    const aspect = result.width / result.height
+    assert.ok(Math.abs(aspect - 10) < 0.5, `aspect ${aspect} should stay near 10:1`)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(join(cache, '..'), { recursive: true, force: true })
+  }
+})
+
+// 第二轮 N2：兜底 box（2048²）走等比适配；极端比例（2×10000）才退回逐轴夹取。
+test('fitFilter keeps the aspect for normal boxes and clamps degenerate ones per axis', () => {
+  assert.match(fitFilter({ width: 2048, height: 2048 }), /force_original_aspect_ratio=decrease/)
+  assert.doesNotMatch(fitFilter({ width: 2, height: 4096 }), /force_original_aspect_ratio/)
+  const box = fitBox(5000, 500)
+  assert.ok(box.width / box.height > 9.5, `fitBox aspect ${box.width / box.height}`)
 })
